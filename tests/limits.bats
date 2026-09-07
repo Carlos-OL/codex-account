@@ -234,3 +234,39 @@ past_epoch() {
   [ "$status" -eq 0 ]
   [ ! -e "$CODEX_ACCOUNT_HOME/usage/work.json" ]
 }
+
+@test "list sizes its columns to the widest row" {
+  sign_in_as 'someone@a-very-long-company-domain.example.com' 'acct-long'
+  backdate_auth
+  write_session rollout-a.jsonl '2026-08-08T10:00:00.000Z' premium 0.0 "$(future_epoch)"
+  "$CODEX_ACCOUNT" save an-account-with-a-long-name
+
+  sign_in_as 'me@x.io' 'acct-short'
+  sleep 1
+  write_session rollout-b.jsonl '2026-08-08T12:00:00.000Z' premium 95.0 "$(future_epoch)"
+  "$CODEX_ACCOUNT" save s
+
+  run "$CODEX_ACCOUNT" list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'100% wk'* ]] || return 1
+  [[ "$output" == *'5% wk'* ]] || return 1
+
+  # Padded columns and a right-aligned usage column make every row the same
+  # length. A fixed width would let the long name and address stretch their
+  # own row and leave the percentages ragged.
+  local line rows=0 width=''
+  while IFS= read -r line; do
+    case "$line" in
+      *'% wk') ;;
+      *) continue ;;
+    esac
+    rows=$((rows + 1))
+    if [ -z "$width" ]; then
+      width="${#line}"
+    elif [ "${#line}" -ne "$width" ]; then
+      return 1
+    fi
+  done <<<"$output"
+
+  [ "$rows" -eq 2 ]
+}

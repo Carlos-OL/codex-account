@@ -12,7 +12,7 @@ set -euo pipefail
 umask 077
 
 readonly PROGRAM_NAME='codex-account'
-readonly PROGRAM_VERSION='0.3.1'
+readonly PROGRAM_VERSION='0.3.2'
 readonly QUIT_TIMEOUT_SECONDS="${CODEX_ACCOUNT_QUIT_TIMEOUT:-20}"
 readonly USAGE_SCAN_MAX_FILES="${CODEX_ACCOUNT_USAGE_SCAN_MAX_FILES:-32}"
 readonly USAGE_SCAN_TAIL_BYTES="${CODEX_ACCOUNT_USAGE_SCAN_TAIL_BYTES:-1048576}"
@@ -908,28 +908,50 @@ report_archive() {
 cmd_list() {
   ensure_profiles_dir
 
-  local active found=0 profile name marker show_usage=0
+  local active found=0 profile name show_usage=0
+  local -a markers names labels usages
+  local i rows=0 name_width=0 label_width=0 usage_width=0
 
   active="$(active_profile_name 2>/dev/null || true)"
 
   # No data at all keeps the exact output list always had.
   any_usage_available && show_usage=1
 
+  # Collect every row before printing any: a width wide enough for one address
+  # is not wide enough for the next, and an overflowing name or address would
+  # push the usage column out of line on that row alone.
   for profile in "$profiles_dir"/*.json; do
     [ -e "$profile" ] || continue
     found=1
     name="$(basename "$profile" .json)"
 
     if [ -n "$active" ] && [ "$name" = "$active" ]; then
-      marker='*'
+      markers[rows]='*'
     else
-      marker=' '
+      markers[rows]=' '
     fi
 
+    names[rows]="$(printable "$name")"
+    labels[rows]="$(credential_label "$profile")"
+    [ "$show_usage" -eq 1 ] && usages[rows]="$(usage_label "$name" "$active")"
+    rows=$((rows + 1))
+  done
+
+  # An empty array is an unbound variable under 'set -u' in bash 5, so the row
+  # count is kept by hand rather than read back off the arrays.
+  for ((i = 0; i < rows; i++)); do
+    [ "${#names[i]}" -gt "$name_width" ] && name_width="${#names[i]}"
+    [ "${#labels[i]}" -gt "$label_width" ] && label_width="${#labels[i]}"
+    [ "$show_usage" -eq 1 ] && [ "${#usages[i]}" -gt "$usage_width" ] && usage_width="${#usages[i]}"
+  done
+
+  # Usage is right-aligned so the percent signs stack.
+  for ((i = 0; i < rows; i++)); do
     if [ "$show_usage" -eq 1 ]; then
-      printf '%s %-20s %-28s %s\n' "$marker" "$(printable "$name")" "$(credential_label "$profile")" "$(usage_label "$name" "$active")"
+      printf '%s %-*s %-*s %*s\n' "${markers[i]}" "$name_width" "${names[i]}" \
+        "$label_width" "${labels[i]}" "$usage_width" "${usages[i]}"
     else
-      printf '%s %-20s %s\n' "$marker" "$(printable "$name")" "$(credential_label "$profile")"
+      printf '%s %-*s %s\n' "${markers[i]}" "$name_width" "${names[i]}" "${labels[i]}"
     fi
   done
 

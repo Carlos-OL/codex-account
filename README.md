@@ -25,8 +25,8 @@ $ codex-account save work
 Saved 'work' (you@company.com).
 
 $ codex-account list
-* work                 you@company.com
-  personal             you@gmail.com
+* work     you@company.com
+  personal you@gmail.com
 
 $ codex-account use personal
 Quitting Codex...
@@ -156,8 +156,8 @@ an extra column:
 
 ```console
 $ codex-account list
-* work                 you@company.com              38% wk
-  personal             you@gmail.com                100% wk
+* work     you@company.com  38% wk
+  personal you@gmail.com   100% wk
 
 $ codex-account limits
 work (you@company.com) — active

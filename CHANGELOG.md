@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-07
+
+### Fixed
+
+- `list` now measures its columns against the rows it is about to print. The
+  name and address columns had fixed widths, so an address longer than 28
+  characters overflowed and shoved that row's usage figure out of line while
+  every other row stayed put. Percentages are also right-aligned now, which
+  lines up the percent signs whether an account has 5%, 57% or 100% left.
+
 ## [0.3.1] - 2026-08-29
 
 ### Fixed
