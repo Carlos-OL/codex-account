@@ -54,6 +54,83 @@ setup() {
   [[ "$output" == *'No profiles saved yet'* ]] || return 1
 }
 
+@test "list --json emits valid redacted profile JSON" {
+  sign_in_as 'work@example.com' 'acct-work'
+  "$CODEX_ACCOUNT" save work
+  sign_in_as 'personal@example.com' 'acct-personal'
+  "$CODEX_ACCOUNT" save personal
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" |
+    jq -e '
+      type == "array" and
+      length == 2 and
+      all(.[]; ((keys | sort) == ["active", "email", "name"]) and
+        (.name | type == "string") and
+        (.email | type == "string") and
+        (.active | type == "boolean")) and
+      (map(select(.active)) | length == 1) and
+      any(.[]; .name == "personal" and .email == "personal@example.com" and .active == true) and
+      any(.[]; .name == "work" and .email == "work@example.com" and .active == false)
+    ' >/dev/null || return 1
+}
+
+@test "list --json includes only the optional local usage label" {
+  sign_in_as 'work@example.com' 'acct-work'
+  "$CODEX_ACCOUNT" save work
+
+  mkdir -p "$CODEX_ACCOUNT_HOME/usage"
+  printf '{"captured_at":1,"weekly":{"used_percent":25,"resets_at":0}}\n' >"$CODEX_ACCOUNT_HOME/usage/work.json"
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" |
+    jq -e '
+      type == "array" and
+      length == 1 and
+      (.[0] | (keys | sort) == ["active", "email", "name", "usage"]) and
+      .[0].usage == "75% wk"
+    ' >/dev/null || return 1
+}
+
+@test "list --json never exposes token account id or credential path data" {
+  sign_in_as 'work@example.com' 'acct-work' 'rt-super-secret'
+  "$CODEX_ACCOUNT" save work
+  sign_in_as 'personal@example.com' 'acct-personal' 'rt-also-secret'
+  "$CODEX_ACCOUNT" save personal
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e . >/dev/null || return 1
+
+  [[ "$output" != *'rt-super-secret'* ]] || return 1
+  [[ "$output" != *'rt-also-secret'* ]] || return 1
+  [[ "$output" != *'access_token'* ]] || return 1
+  [[ "$output" != *'refresh_token'* ]] || return 1
+  [[ "$output" != *'id_token'* ]] || return 1
+  [[ "$output" != *'OPENAI_API_KEY'* ]] || return 1
+  [[ "$output" != *'acct-work'* ]] || return 1
+  [[ "$output" != *'acct-personal'* ]] || return 1
+  [[ "$output" != *"$CODEX_HOME"* ]] || return 1
+  [[ "$output" != *"$CODEX_ACCOUNT_HOME"* ]] || return 1
+  [[ "$output" != *'auth.json'* ]] || return 1
+  [[ "$output" != *'/profiles/'* ]] || return 1
+}
+
+@test "list --json rejects control-byte profile names through existing validation" {
+  sign_in_as 'work@example.com' 'acct-work'
+
+  run "$CODEX_ACCOUNT" save "$(printf 'ok\nEVIL')"
+  [ "$status" -ne 0 ]
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e 'type == "array" and length == 0' >/dev/null || return 1
+}
+
 @test "--quiet suppresses informational output" {
   sign_in_as 'work@example.com' 'acct-work'
   run "$CODEX_ACCOUNT" --quiet save work

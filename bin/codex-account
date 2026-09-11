@@ -49,6 +49,13 @@ printable() {
   printf '%s' "$1" | tr -d '[:cntrl:]'
 }
 
+json_string() {
+  local value
+
+  value="$(printable "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '"%s"' "$value"
+}
+
 # A non-numeric value would make the wait loop's test error out, which reads as
 # "not expired yet" and never times out.
 case "$QUIT_TIMEOUT_SECONDS" in
@@ -974,6 +981,45 @@ cmd_list() {
   report_archive
 }
 
+cmd_list_json() {
+  ensure_profiles_dir
+
+  local active profile name first=1 show_usage=0 label usage
+
+  active="$(active_profile_name 2>/dev/null || true)"
+  any_usage_available && show_usage=1
+
+  printf '['
+  for profile in "$profiles_dir"/*.json; do
+    [ -e "$profile" ] || continue
+    name="$(basename "$profile" .json)"
+    label="$(credential_label "$profile")"
+
+    [ "$first" -eq 1 ] || printf ','
+    first=0
+
+    printf '{"name":'
+    json_string "$name"
+    printf ',"email":'
+    json_string "$label"
+    printf ',"active":'
+    if [ -n "$active" ] && [ "$name" = "$active" ]; then
+      printf 'true'
+    else
+      printf 'false'
+    fi
+
+    if [ "$show_usage" -eq 1 ]; then
+      usage="$(usage_label "$name" "$active")"
+      printf ',"usage":'
+      json_string "$usage"
+    fi
+
+    printf '}'
+  done
+  printf ']\n'
+}
+
 cmd_current() {
   local active
 
@@ -1275,6 +1321,15 @@ main() {
         args+=("$@")
         break
         ;;
+      --json)
+        if [ "${#args[@]}" -eq 1 ] && { [ "${args[0]}" = 'list' ] || [ "${args[0]}" = 'ls' ]; }; then
+          args+=("$1")
+        else
+          warn "unknown option: $1"
+          cmd_help >&2
+          return 2
+        fi
+        ;;
       -*)
         warn "unknown option: $1"
         cmd_help >&2
@@ -1298,7 +1353,22 @@ main() {
   fi
 
   case "$command" in
-    list | ls) cmd_list ;;
+    list | ls)
+      case "${#args[@]}" in
+        0) cmd_list ;;
+        1)
+          if [ "${args[0]}" = '--json' ]; then
+            cmd_list_json
+          else
+            cmd_list
+          fi
+          ;;
+        *)
+          [ "${args[0]}" = '--json' ] && die "usage: $PROGRAM_NAME list [--json]"
+          cmd_list
+          ;;
+      esac
+      ;;
     current | whoami) cmd_current ;;
     limits | usage) cmd_limits ;;
     save)
