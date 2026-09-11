@@ -1,0 +1,27 @@
+# Codex Account Menu
+
+`codex-account-menu` is a minimal macOS menu-bar wrapper around the existing `codex-account` CLI.
+
+It only runs:
+
+- `codex-account list --json`
+- `codex-account use <profile>`
+
+The app does not read auth, profile, token, or session files. It does not make network calls, store credentials, start a listener, or request Accessibility, automation, admin, or filesystem permissions.
+
+## Build
+
+```sh
+swift build --package-path menu-bar
+swift test --package-path menu-bar
+```
+
+## Run
+
+By default the app uses the first executable CLI found at `/opt/homebrew/bin/codex-account` or `/usr/local/bin/codex-account`. To use a different absolute path:
+
+```sh
+CODEX_ACCOUNT_EXECUTABLE=/absolute/path/to/codex-account swift run --package-path menu-bar codex-account-menu
+```
+
+The menu refreshes when opened, marks the active profile with a checkmark, disables profile switching while a switch is running, and reloads after switching.
