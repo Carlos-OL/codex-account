@@ -39,7 +39,7 @@ Run: `bats tests/cli.bats`
 
 **Step 3: Implement minimal output mode**
 
-Add a `--json` option valid only for `list`. Generate JSON with shell-safe escaping using the existing `jq` path when present plus a dependency-free fallback, or use a small Swift helper only if the project can retain Bash 3.2 compatibility. Preserve the existing human-oriented default output exactly.
+Add a `--json` option valid only for `list`. Generate JSON with shell-safe escaping using the existing `jq` path; JSON mode must fail with a clear install message when `jq` is unavailable. Preserve the existing human-oriented default output exactly, including its legacy no-`jq` fallback behavior.
 
 **Step 4: Run tests**
 

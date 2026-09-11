@@ -44,15 +44,21 @@ die() {
 
 # Emails come from a token we deliberately do not verify, and profile names are
 # read back off disk, so both can carry escape sequences that rewrite the
-# terminal. Strip control bytes; multibyte UTF-8 passes through untouched.
+# terminal. Strip control characters; multibyte UTF-8 passes through untouched.
 printable() {
   printf '%s' "$1" | tr -d '[:cntrl:]'
+}
+
+# JSON text must be valid UTF-8. Keep only printable ASCII before JSON escaping;
+# this redacts malformed local bytes instead of letting labels break output.
+json_printable() {
+  printf '%s' "$1" | LC_ALL=C tr -cd '\040-\176'
 }
 
 json_string() {
   local value
 
-  value="$(printable "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  value="$(json_printable "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '"%s"' "$value"
 }
 
@@ -982,9 +988,11 @@ cmd_list() {
 }
 
 cmd_list_json() {
-  ensure_profiles_dir
+  have_jq || die 'list --json requires jq; install jq and retry (for example: brew install jq or apt install jq)'
 
   local active profile name first=1 show_usage=0 label usage
+
+  ensure_profiles_dir
 
   active="$(active_profile_name 2>/dev/null || true)"
   any_usage_available && show_usage=1
@@ -1253,7 +1261,7 @@ cmd_help() {
 $PROGRAM_NAME $PROGRAM_VERSION — switch between multiple local Codex sign-ins.
 
 Usage:
-  $PROGRAM_NAME list                  List saved profiles ('*' marks the active one)
+  $PROGRAM_NAME list [--json]         List saved profiles ('*' marks the active one)
   $PROGRAM_NAME current               Show which account is signed in right now
   $PROGRAM_NAME limits                Show how much of each account's rate limit is left
   $PROGRAM_NAME save <name>           Save the active sign-in as a profile
@@ -1265,6 +1273,9 @@ Usage:
   $PROGRAM_NAME help                  Show this help
 
 Options:
+      --json             With list/ls only, print redacted JSON:
+                         [{"name":string,"email":string,"active":boolean,"usage"?:string}]
+                         Requires jq.
   -n, --dry-run          Show what would happen; change nothing
   -f, --force            Overwrite an existing profile, or remove the active one
       --no-reopen        Do not reopen the Codex app afterwards (macOS)
@@ -1299,7 +1310,7 @@ reopen=1
 discard_orphan=0
 
 main() {
-  local command='' args=()
+  local command='' args=() list_json=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -1323,7 +1334,7 @@ main() {
         ;;
       --json)
         if [ "${#args[@]}" -eq 1 ] && { [ "${args[0]}" = 'list' ] || [ "${args[0]}" = 'ls' ]; }; then
-          args+=("$1")
+          list_json=1
         else
           warn "unknown option: $1"
           cmd_help >&2
@@ -1354,20 +1365,12 @@ main() {
 
   case "$command" in
     list | ls)
-      case "${#args[@]}" in
-        0) cmd_list ;;
-        1)
-          if [ "${args[0]}" = '--json' ]; then
-            cmd_list_json
-          else
-            cmd_list
-          fi
-          ;;
-        *)
-          [ "${args[0]}" = '--json' ] && die "usage: $PROGRAM_NAME list [--json]"
-          cmd_list
-          ;;
-      esac
+      if [ "$list_json" -eq 1 ]; then
+        [ "${#args[@]}" -eq 0 ] || die "usage: $PROGRAM_NAME list [--json]"
+        cmd_list_json
+      else
+        cmd_list
+      fi
       ;;
     current | whoami) cmd_current ;;
     limits | usage) cmd_limits ;;

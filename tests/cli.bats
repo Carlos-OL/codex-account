@@ -131,6 +131,105 @@ setup() {
   printf '%s\n' "$output" | jq -e 'type == "array" and length == 0' >/dev/null || return 1
 }
 
+@test "list --json emits valid JSON with invalid bytes in existing profile data" {
+  mkdir -p "$CODEX_ACCOUNT_HOME/profiles"
+
+  make_credential "$(printf 'bad\377@example.com')" 'acct-bad' >"$CODEX_ACCOUNT_HOME/profiles/badfile.json"
+  chmod 600 "$CODEX_ACCOUNT_HOME/profiles"/*.json
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" |
+    jq -e '
+      type == "array" and
+      length == 1 and
+      (.[0] | (keys | sort) == ["active", "email", "name"]) and
+      .[0].name == "badfile" and
+      .[0].email == "bad@example.com" and
+      .[0].active == false
+    ' >/dev/null || return 1
+}
+
+@test "list --json escapes quotes and backslashes in display labels" {
+  local claims
+
+  claims="$(printf '%s' '{"email":"quote\"slash\\@example.com","email_verified":true}' | base64url)"
+  printf '{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"id_token":"hdr.%s.sig","access_token":"at-quoted","refresh_token":"rt-quoted","account_id":"acct-quoted"},"last_refresh":"2026-07-24T09:31:00.000Z"}' \
+    "$claims" >"$CODEX_HOME/auth.json"
+  chmod 600 "$CODEX_HOME/auth.json"
+  "$CODEX_ACCOUNT" save quoted
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" |
+    jq -e '
+      type == "array" and
+      length == 1 and
+      .[0].name == "quoted" and
+      .[0].email == "quote\"slash\\@example.com"
+    ' >/dev/null || return 1
+}
+
+@test "list --json refuses safely when jq is unavailable" {
+  CODEX_ACCOUNT_FAKE_NO_JQ=1
+  export CODEX_ACCOUNT_FAKE_NO_JQ
+  sign_in_as 'work@example.com' 'acct-work' 'rt-super-secret'
+  "$CODEX_ACCOUNT" save work
+
+  run "$CODEX_ACCOUNT" list --json
+  [ "$status" -eq 1 ]
+
+  [[ "$output" == *'list --json requires jq'* ]] || return 1
+  [[ "$output" == *'install jq'* ]] || return 1
+  [[ "$output" != *'rt-super-secret'* ]] || return 1
+  [[ "$output" != *'access_token'* ]] || return 1
+  [[ "$output" != *'refresh_token'* ]] || return 1
+  [[ "$output" != *'id_token'* ]] || return 1
+  [[ "$output" != *'OPENAI_API_KEY'* ]] || return 1
+  [[ "$output" != *'acct-work'* ]] || return 1
+  [[ "$output" != *'work@example.com'* ]] || return 1
+  [[ "$output" != *"$CODEX_HOME"* ]] || return 1
+  [[ "$output" != *"$CODEX_ACCOUNT_HOME"* ]] || return 1
+  [[ "$output" != *'auth.json'* ]] || return 1
+  [[ "$output" != *'/profiles/'* ]] || return 1
+}
+
+@test "ls --json emits redacted profile JSON" {
+  sign_in_as 'work@example.com' 'acct-work'
+  "$CODEX_ACCOUNT" save work
+
+  run "$CODEX_ACCOUNT" ls --json
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" |
+    jq -e 'type == "array" and length == 1 and .[0].name == "work"' >/dev/null || return 1
+}
+
+@test "-- terminates option parsing for list" {
+  sign_in_as 'work@example.com' 'acct-work'
+  "$CODEX_ACCOUNT" save work
+
+  run "$CODEX_ACCOUNT" list -- --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'work@example.com'* ]] || return 1
+  [[ "$output" != '['* ]] || return 1
+}
+
+@test "help documents list json and redacted schema" {
+  run "$CODEX_ACCOUNT" help
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *'list [--json]'* ]] || return 1
+  [[ "$output" == *'With list/ls only, print redacted JSON'* ]] || return 1
+  [[ "$output" == *'Requires jq'* ]] || return 1
+  [[ "$output" == *'"name":string'* ]] || return 1
+  [[ "$output" == *'"email":string'* ]] || return 1
+  [[ "$output" == *'"active":boolean'* ]] || return 1
+  [[ "$output" == *'"usage"?:string'* ]] || return 1
+}
+
 @test "--quiet suppresses informational output" {
   sign_in_as 'work@example.com' 'acct-work'
   run "$CODEX_ACCOUNT" --quiet save work

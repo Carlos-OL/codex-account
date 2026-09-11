@@ -233,6 +233,30 @@ setup() {
   [[ "$output" != *$'\033'* ]] || return 1
 }
 
+@test "C1 CSI in a credential email never reaches list or current output" {
+  local claims csi_sequence
+  csi_sequence=$'\302\233[2K'
+
+  claims="$(printf '{"email":"\\u009b[2Kspoofed@example.com","email_verified":true}' | base64url)"
+  printf '{"auth_mode":"chatgpt","tokens":{"id_token":"hdr.%s.sig","refresh_token":"rt","account_id":"acct-c1"}}' \
+    "$claims" >"$CODEX_HOME/auth.json"
+  chmod 600 "$CODEX_HOME/auth.json"
+
+  "$CODEX_ACCOUNT" save c1
+
+  run "$CODEX_ACCOUNT" list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'spoofed@example.com'* ]] || return 1
+  [[ "$output" != *$'\302\233'* ]] || return 1
+  [[ "$output" != *"$csi_sequence"* ]] || return 1
+
+  run "$CODEX_ACCOUNT" current
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'spoofed@example.com'* ]] || return 1
+  [[ "$output" != *$'\302\233'* ]] || return 1
+  [[ "$output" != *"$csi_sequence"* ]] || return 1
+}
+
 @test "a non-numeric quit timeout is refused instead of looping forever" {
   sign_in_as 'work@example.com' 'acct-work'
 

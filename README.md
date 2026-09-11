@@ -39,7 +39,7 @@ Codex reopened.
 ## Install
 
 Requires `bash` (3.2+, so macOS's built-in shell works), plus `pgrep`. `jq` is
-used when present but is not required.
+required only for `list --json` / `ls --json`.
 
 **Homebrew:**
 
@@ -69,14 +69,15 @@ curl -fsSLo ~/.local/bin/codex-account \
 chmod +x ~/.local/bin/codex-account
 ```
 
-It's one self-contained script with no dependencies to install. Read it before
-you run it — it handles your credentials.
+It's one self-contained script; install `jq` only if you need JSON listing.
+Read it before you run it — it handles your credentials.
 
 ## Usage
 
 | Command | What it does |
 | --- | --- |
 | `codex-account list` | List saved profiles; `*` marks the active one |
+| `codex-account list --json` | Print a redacted JSON profile list; requires `jq` |
 | `codex-account current` | Show which account is signed in right now |
 | `codex-account limits` | Show how much of each account's rate limit is left |
 | `codex-account save <name>` | Save the active sign-in under a name |
