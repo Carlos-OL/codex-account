@@ -18,7 +18,7 @@ swift test --package-path menu-bar
 
 ## Run
 
-By default the app uses the first executable CLI found at `/opt/homebrew/bin/codex-account` or `/usr/local/bin/codex-account`. To use a different absolute path:
+By default the app uses the first executable CLI found at `$HOME/.local/bin/codex-account`, `/opt/homebrew/bin/codex-account`, or `/usr/local/bin/codex-account`. To use a different absolute path:
 
 ```sh
 CODEX_ACCOUNT_EXECUTABLE=/absolute/path/to/codex-account swift run --package-path menu-bar codex-account-menu

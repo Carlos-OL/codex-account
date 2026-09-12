@@ -121,9 +121,25 @@ func testExecutableLocatorUsesConfiguredAbsolutePath() {
     XCTAssertEqual(
         CLIExecutableLocator.defaultExecutableURL(
             environment: ["CODEX_ACCOUNT_EXECUTABLE": "/custom/codex-account"],
+            homeDirectory: URL(fileURLWithPath: "/Users/example"),
             isExecutableFile: { _ in false }
         ),
         URL(fileURLWithPath: "/custom/codex-account")
+    )
+}
+
+func testExecutableLocatorUsesUserLocalCandidateBeforeHomebrew() {
+    XCTAssertEqual(
+        CLIExecutableLocator.defaultExecutableURL(
+            environment: [:],
+            homeDirectory: URL(fileURLWithPath: "/Users/example"),
+            isExecutableFile: {
+                $0 == "/Users/example/.local/bin/codex-account" ||
+                    $0 == "/opt/homebrew/bin/codex-account" ||
+                    $0 == "/usr/local/bin/codex-account"
+            }
+        ),
+        URL(fileURLWithPath: "/Users/example/.local/bin/codex-account")
     )
 }
 
@@ -131,6 +147,7 @@ func testExecutableLocatorUsesAppleSiliconHomebrewCandidate() {
     XCTAssertEqual(
         CLIExecutableLocator.defaultExecutableURL(
             environment: [:],
+            homeDirectory: URL(fileURLWithPath: "/Users/example"),
             isExecutableFile: { $0 == "/opt/homebrew/bin/codex-account" || $0 == "/usr/local/bin/codex-account" }
         ),
         URL(fileURLWithPath: "/opt/homebrew/bin/codex-account")
@@ -141,6 +158,7 @@ func testExecutableLocatorUsesIntelHomebrewCandidate() {
     XCTAssertEqual(
         CLIExecutableLocator.defaultExecutableURL(
             environment: [:],
+            homeDirectory: URL(fileURLWithPath: "/Users/example"),
             isExecutableFile: { $0 == "/usr/local/bin/codex-account" }
         ),
         URL(fileURLWithPath: "/usr/local/bin/codex-account")
@@ -151,6 +169,7 @@ func testExecutableLocatorFallsBackToIntelPath() {
     XCTAssertEqual(
         CLIExecutableLocator.defaultExecutableURL(
             environment: ["CODEX_ACCOUNT_EXECUTABLE": "codex-account"],
+            homeDirectory: URL(fileURLWithPath: "/Users/example"),
             isExecutableFile: { _ in false }
         ),
         URL(fileURLWithPath: "/usr/local/bin/codex-account")

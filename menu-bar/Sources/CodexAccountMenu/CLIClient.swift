@@ -177,6 +177,7 @@ extension CLIClient where Runner == FoundationProcessRunner {
 enum CLIExecutableLocator {
     static func defaultExecutableURL(
         environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         isExecutableFile: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
     ) -> URL {
         if let configured = environment["CODEX_ACCOUNT_EXECUTABLE"], configured.hasPrefix("/") {
@@ -184,6 +185,7 @@ enum CLIExecutableLocator {
         }
 
         let executablePaths = [
+            homeDirectory.appendingPathComponent(".local/bin/codex-account").path,
             "/opt/homebrew/bin/codex-account",
             "/usr/local/bin/codex-account",
         ]
