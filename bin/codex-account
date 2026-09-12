@@ -224,7 +224,7 @@ jwt_payload() {
 }
 
 # Stable across token refreshes, unlike the file contents, so this is what
-# identifies an account.
+# identifies a workspace in credentials that lack user-level claims.
 credential_account_id() {
   local file="$1" contents
 
@@ -232,6 +232,37 @@ credential_account_id() {
   contents="$(cat "$file")" || return 1
 
   json_string_field "$contents" 'tokens' 'account_id'
+}
+
+# Identifies the signed-in user without confusing different users in one workspace.
+# Args: path to a Codex credential file.
+# Returns: a namespaced user, subject, or legacy workspace identifier on stdout.
+# Called by: active_profile_name().
+# Calls: json_string_field() and jwt_payload().
+credential_identity() {
+  local file="$1" contents id_token payload identity
+
+  [ -f "$file" ] || return 1
+  contents="$(cat "$file")" || return 1
+
+  id_token="$(json_string_field "$contents" 'tokens' 'id_token')"
+  if [ -n "$id_token" ] && payload="$(jwt_payload "$id_token")"; then
+    identity="$(json_string_field "$payload" 'https://api.openai.com/auth' 'chatgpt_user_id')"
+    if [ -n "$identity" ]; then
+      printf 'user:%s' "$identity"
+      return 0
+    fi
+
+    identity="$(json_string_field "$payload" '' 'sub')"
+    if [ -n "$identity" ]; then
+      printf 'subject:%s' "$identity"
+      return 0
+    fi
+  fi
+
+  identity="$(credential_account_id "$file")"
+  [ -n "$identity" ] || return 1
+  printf 'workspace:%s' "$identity"
 }
 
 credential_email() {
@@ -518,17 +549,17 @@ install_credential() {
 }
 
 active_profile_name() {
-  local active_id profile name profile_id
+  local active_identity profile name profile_identity
 
   active_credential_exists || return 1
-  active_id="$(credential_account_id "$auth_file" 2>/dev/null || true)"
-  [ -n "$active_id" ] || return 1
+  active_identity="$(credential_identity "$auth_file" 2>/dev/null || true)"
+  [ -n "$active_identity" ] || return 1
 
   for profile in "$profiles_dir"/*.json; do
     [ -e "$profile" ] || continue
-    profile_id="$(credential_account_id "$profile" 2>/dev/null || true)"
+    profile_identity="$(credential_identity "$profile" 2>/dev/null || true)"
 
-    if [ -n "$profile_id" ] && [ "$profile_id" = "$active_id" ]; then
+    if [ -n "$profile_identity" ] && [ "$profile_identity" = "$active_identity" ]; then
       name="$(basename "$profile" .json)"
       printf '%s' "$name"
       return 0
@@ -824,24 +855,37 @@ percent_left() {
   }'
 }
 
-usage_label() {
-  local name="$1" active="$2" line used resets now
+# Formats the remaining allowance for one rate-limit window.
+# Args: profile name, active profile name, window key, display suffix.
+# Returns: a compact label on stdout, or non-zero when the window has no data.
+# Called by: usage_label() and cmd_list_json().
+# Calls: profile_usage(), usage_reset_passed(), and percent_left().
+window_usage_label() {
+  local name="$1" active="$2" window="$3" suffix="$4" line used resets now
 
-  if ! line="$(profile_usage "$name" weekly "$active")"; then
-    printf '%s' '-'
-    return 0
-  fi
+  line="$(profile_usage "$name" "$window" "$active")" || return 1
 
   used="$(printf '%s' "$line" | cut -f1)"
   resets="$(printf '%s' "$line" | cut -f2)"
   now="$(date '+%s')"
 
   if usage_reset_passed "$resets" "$now"; then
-    printf '100%% wk'
+    printf '100%% %s' "$suffix"
     return 0
   fi
 
-  printf '%s%% wk' "$(percent_left "$used")"
+  printf '%s%% %s' "$(percent_left "$used")" "$suffix"
+}
+
+# Preserves the weekly-only label used by the human-readable list command.
+# Args: profile name and active profile name.
+# Returns: the weekly label on stdout, or '-' when weekly data is unavailable.
+# Called by: cmd_list() and cmd_list_json().
+# Calls: window_usage_label().
+usage_label() {
+  local name="$1" active="$2"
+
+  window_usage_label "$name" "$active" weekly wk || printf '%s' '-'
 }
 
 any_usage_available() {
@@ -990,7 +1034,7 @@ cmd_list() {
 cmd_list_json() {
   have_jq || die 'list --json requires jq; install jq and retry (for example: brew install jq or apt install jq)'
 
-  local active profile name first=1 show_usage=0 label usage
+  local active profile name first=1 show_usage=0 label usage five_hour_usage
 
   ensure_profiles_dir
 
@@ -1021,6 +1065,11 @@ cmd_list_json() {
       usage="$(usage_label "$name" "$active")"
       printf ',"usage":'
       json_string "$usage"
+
+      if five_hour_usage="$(window_usage_label "$name" "$active" fivehour 5h)"; then
+        printf ',"five_hour_usage":'
+        json_string "$five_hour_usage"
+      fi
     fi
 
     printf '}'
@@ -1274,7 +1323,8 @@ Usage:
 
 Options:
       --json             With list/ls only, print redacted JSON:
-                         [{"name":string,"email":string,"active":boolean,"usage"?:string}]
+                         [{"name":string,"email":string,"active":boolean,
+                           "usage"?:string,"five_hour_usage"?:string}]
                          Requires jq.
   -n, --dry-run          Show what would happen; change nothing
   -f, --force            Overwrite an existing profile, or remove the active one

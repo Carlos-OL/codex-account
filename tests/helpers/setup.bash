@@ -26,9 +26,9 @@ base64url() {
 }
 
 make_credential() {
-  local email="$1" account_id="$2" refresh="${3:-rt-default}" claims
+  local email="$1" account_id="$2" refresh="${3:-rt-default}" user_id="${4:-user-$2}" claims
 
-  claims="$(printf '{"email":"%s","email_verified":true}' "$email" | base64url)"
+  claims="$(printf '{"email":"%s","email_verified":true,"sub":"%s","https://api.openai.com/auth":{"chatgpt_user_id":"%s"}}' "$email" "$user_id" "$user_id" | base64url)"
 
   printf '{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"id_token":"hdr.%s.sig","access_token":"at-%s","refresh_token":"%s","account_id":"%s"},"last_refresh":"2026-07-24T09:31:00.000Z"}' \
     "$claims" "$account_id" "$refresh" "$account_id"

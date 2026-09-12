@@ -77,12 +77,12 @@ setup() {
     ' >/dev/null || return 1
 }
 
-@test "list --json includes only the optional local usage label" {
+@test "list --json includes optional weekly and five-hour usage labels" {
   sign_in_as 'work@example.com' 'acct-work'
   "$CODEX_ACCOUNT" save work
 
   mkdir -p "$CODEX_ACCOUNT_HOME/usage"
-  printf '{"captured_at":1,"weekly":{"used_percent":25,"resets_at":0}}\n' >"$CODEX_ACCOUNT_HOME/usage/work.json"
+  printf '{"captured_at":1,"weekly":{"used_percent":25,"resets_at":0},"five_hour":{"used_percent":60,"resets_at":0}}\n' >"$CODEX_ACCOUNT_HOME/usage/work.json"
 
   run "$CODEX_ACCOUNT" list --json
   [ "$status" -eq 0 ]
@@ -91,8 +91,9 @@ setup() {
     jq -e '
       type == "array" and
       length == 1 and
-      (.[0] | (keys | sort) == ["active", "email", "name", "usage"]) and
-      .[0].usage == "75% wk"
+      (.[0] | (keys | sort) == ["active", "email", "five_hour_usage", "name", "usage"]) and
+      .[0].usage == "75% wk" and
+      .[0].five_hour_usage == "40% 5h"
     ' >/dev/null || return 1
 }
 
@@ -228,6 +229,7 @@ setup() {
   [[ "$output" == *'"email":string'* ]] || return 1
   [[ "$output" == *'"active":boolean'* ]] || return 1
   [[ "$output" == *'"usage"?:string'* ]] || return 1
+  [[ "$output" == *'"five_hour_usage"?:string'* ]] || return 1
 }
 
 @test "--quiet suppresses informational output" {

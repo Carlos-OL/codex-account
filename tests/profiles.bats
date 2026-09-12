@@ -184,13 +184,30 @@ setup() {
   [ ! -d "$CODEX_ACCOUNT_HOME/archive" ]
 }
 
-@test "profiles are matched by account id, not file contents" {
+@test "profiles remain matched after token refresh" {
   sign_in_as 'work@example.com' 'acct-work' 'rt-one'
   "$CODEX_ACCOUNT" save work
 
   sign_in_as 'work@example.com' 'acct-work' 'rt-two'
   run "$CODEX_ACCOUNT" current
   [[ "$output" == *'work (work@example.com)'* ]] || return 1
+}
+
+@test "users sharing one workspace id switch without overwriting each other" {
+  sign_in_as 'first@example.com' 'acct-shared' 'rt-first' 'user-first'
+  "$CODEX_ACCOUNT" save first
+  sign_in_as 'second@example.com' 'acct-shared' 'rt-second' 'user-second'
+  "$CODEX_ACCOUNT" save second
+
+  "$CODEX_ACCOUNT" use first
+  "$CODEX_ACCOUNT" use second
+
+  run "$CODEX_ACCOUNT" current
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'second (second@example.com)'* ]] || return 1
+
+  run grep -c 'rt-first' "$(profile_file first)"
+  [ "$status" -eq 0 ]
 }
 
 @test "a credential without a readable e-mail still works" {

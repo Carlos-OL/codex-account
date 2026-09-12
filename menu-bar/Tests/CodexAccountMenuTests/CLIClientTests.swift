@@ -27,7 +27,7 @@ private func result(exitCode: Int32 = 0, stdout: String = "", stderr: String = "
 final class CLIClientTests: XCTestCase {
 func testDecodesValidRedactedProfileList() throws {
     let runner = StubRunner(results: [
-        result(stdout: #"[{"name":"work","email":"work@example.com","active":true},{"name":"personal","email":"me@example.com","active":false,"usage":"75% wk"}]"#)
+        result(stdout: #"[{"name":"work","email":"work@example.com","active":true},{"name":"personal","email":"me@example.com","active":false,"usage":"75% wk","five_hour_usage":"40% 5h"}]"#)
     ])
     let client = CLIClient(executableURL: URL(fileURLWithPath: "/tmp/codex-account"), runner: runner)
 
@@ -35,7 +35,7 @@ func testDecodesValidRedactedProfileList() throws {
 
     XCTAssertEqual(profiles, [
         CodexAccountProfile(name: "work", email: "work@example.com", active: true),
-        CodexAccountProfile(name: "personal", email: "me@example.com", active: false, usage: "75% wk"),
+        CodexAccountProfile(name: "personal", email: "me@example.com", active: false, usage: "75% wk", fiveHourUsage: "40% 5h"),
     ])
 }
 
@@ -88,15 +88,87 @@ func testUseCommandRejectsInvalidProfileNameBeforeLaunch() throws {
 func testUseCommandPassesProfileAsSingleArgument() throws {
     let executable = URL(fileURLWithPath: "/opt/bin/codex-account")
     let runner = StubRunner(results: [
-        result()
+        result(),
+        result(stdout: #"[{"name":"work.dev-1","email":"work@example.com","active":true}]"#),
     ])
     let client = CLIClient(executableURL: executable, runner: runner)
 
     try client.useProfile(named: "work.dev-1")
 
     XCTAssertEqual(runner.commands, [
-        ProcessCommand(executableURL: executable, arguments: ["use", "work.dev-1"])
+        ProcessCommand(executableURL: executable, arguments: ["use", "work.dev-1"]),
+        ProcessCommand(executableURL: executable, arguments: ["list", "--json"]),
     ])
+}
+
+func testUseCommandFailsWhenSelectedProfileIsNotActiveAfterSwitch() throws {
+    let runner = StubRunner(results: [
+        result(),
+        result(stdout: #"[{"name":"work","email":"work@example.com","active":false},{"name":"other","email":"other@example.com","active":true}]"#),
+    ])
+    let client = CLIClient(executableURL: URL(fileURLWithPath: "/tmp/codex-account"), runner: runner)
+
+    XCTAssertThrowsError(try client.useProfile(named: "work")) { error in
+        XCTAssertEqual(error as? CLIClientError, .switchVerificationFailed)
+    }
+}
+
+func testSaveCommandUsesForceOnlyAfterConfirmedOverwrite() throws {
+    let executable = URL(fileURLWithPath: "/opt/bin/codex-account")
+    let runner = StubRunner(results: [result(), result()])
+    let client = CLIClient(executableURL: executable, runner: runner)
+
+    try client.saveProfile(named: "new-account")
+    try client.saveProfile(named: "existing", overwrite: true)
+
+    XCTAssertEqual(runner.commands, [
+        ProcessCommand(executableURL: executable, arguments: ["save", "new-account"]),
+        ProcessCommand(executableURL: executable, arguments: ["--force", "save", "existing"]),
+    ])
+}
+
+func testSaveCommandRejectsInvalidNameBeforeLaunch() throws {
+    let runner = StubRunner(results: [])
+    let client = CLIClient(executableURL: URL(fileURLWithPath: "/tmp/codex-account"), runner: runner)
+
+    XCTAssertThrowsError(try client.saveProfile(named: "bad account")) { error in
+        XCTAssertEqual(error as? CLIClientError, .invalidProfileName)
+    }
+    XCTAssertTrue(runner.commands.isEmpty)
+}
+
+func testForgetCommandUsesNoExtraArguments() throws {
+    let executable = URL(fileURLWithPath: "/opt/bin/codex-account")
+    let runner = StubRunner(results: [result()])
+    let client = CLIClient(executableURL: executable, runner: runner)
+
+    try client.forgetActiveSignIn()
+
+    XCTAssertEqual(runner.commands, [
+        ProcessCommand(executableURL: executable, arguments: ["forget"]),
+    ])
+}
+
+func testRemoveCommandPassesValidatedNameWithoutForce() throws {
+    let executable = URL(fileURLWithPath: "/opt/bin/codex-account")
+    let runner = StubRunner(results: [result()])
+    let client = CLIClient(executableURL: executable, runner: runner)
+
+    try client.removeProfile(named: "old-account")
+
+    XCTAssertEqual(runner.commands, [
+        ProcessCommand(executableURL: executable, arguments: ["remove", "old-account"]),
+    ])
+}
+
+func testRemoveCommandRejectsInvalidNameBeforeLaunch() throws {
+    let runner = StubRunner(results: [])
+    let client = CLIClient(executableURL: URL(fileURLWithPath: "/tmp/codex-account"), runner: runner)
+
+    XCTAssertThrowsError(try client.removeProfile(named: "bad/account")) { error in
+        XCTAssertEqual(error as? CLIClientError, .invalidProfileName)
+    }
+    XCTAssertTrue(runner.commands.isEmpty)
 }
 
 func testFailureOutputIsRedactedAndBounded() throws {
